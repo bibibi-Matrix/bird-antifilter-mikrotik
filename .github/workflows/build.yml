@@ -1,0 +1,32 @@
+name: Build Docker Image for MikroTik
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: docker build -t bird2-antifilter:latest .
+
+      - name: Export image as tar
+        run: docker save bird2-antifilter:latest -o bird2-antifilter.tar
+
+      - name: Upload tar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bird2-antifilter-mikrotik
+          path: bird2-antifilter.tar
+          retention-days: 30
+
+
