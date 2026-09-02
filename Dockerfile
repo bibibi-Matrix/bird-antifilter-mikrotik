@@ -11,7 +11,7 @@ RUN apk add --no-cache \
     diffutils \
     && rm -rf /var/cache/apk/*
 
-RUN mkdir -p /etc/bird/list /etc/bird/list_rsc /etc/bird/list_custom /var/run/bird /var/log \
+RUN mkdir -p /etc/bird/list /etc/bird/list_rsc /etc/bird/list_custom /etc/bird/black_list /var/run/bird /var/log \
     && ln -sf /usr/sbin/bird2 /usr/local/bin/bird2 \
     && ln -sf /usr/sbin/birdc /usr/local/bin/birdc
 

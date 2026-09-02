@@ -10,7 +10,9 @@ services:
     network_mode: host
     volumes:
       - ./etc/bird/bird2.conf:/etc/bird/bird2.conf:ro
+      - ./etc/bird/bird.conf.template:/etc/bird/bird.conf.template:ro
       - ./etc/bird/list_custom:/etc/bird/list_custom:ro
+      - ./etc/bird/black_list:/etc/bird/black_list:ro
       - bird2-state:/var/run/bird
     cap_add:
       - NET_ADMIN

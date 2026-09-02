@@ -1,0 +1,48 @@
+log syslog all;
+router id @@ROUTER_ID@@;
+
+protocol device {
+}
+
+protocol direct {
+    disabled;
+    ipv4;
+    ipv6;
+}
+
+protocol kernel {
+    ipv4 {
+        import none;
+        export none;
+    };
+}
+
+protocol kernel {
+    ipv6 { export none; };
+}
+
+protocol static static_all {
+    ipv4;
+@@INCLUDES@@
+}
+
+filter bgp_out_all {
+    if proto = "static_all" then {
+        bgp_community.add((@@LOCAL_AS@@, 100));
+        accept;
+    }
+    reject;
+}
+
+protocol bgp MRK_CHR_GW01 {
+    description "Mikrotik CHR GW01";
+    neighbor @@GW_IP@@ as @@GW_AS@@;
+    hold time @@HOLD_TIME@@;
+    local as @@LOCAL_AS@@;
+    passive on;
+    ipv4 {
+        import none;
+        export filter bgp_out_all;
+        next hop self;
+    };
+}
