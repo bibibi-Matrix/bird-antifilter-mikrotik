@@ -29,4 +29,11 @@ jobs:
           path: bird2-antifilter.tar
           retention-days: 30
 
-
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bird2-antifilter.tar
+          generate_release_notes: true
+          draft: false
+          prerelease: false

@@ -8,7 +8,8 @@ RUN apk add --no-cache \
     curl \
     bash \
     dcron \
-    diffutils \
+    coreutils \
+    ip-route2 \
     && rm -rf /var/cache/apk/*
 
 RUN mkdir -p /etc/bird/list /etc/bird/list_rsc /etc/bird/list_custom /etc/bird/black_list /var/run/bird /var/log \
@@ -21,5 +22,8 @@ COPY bin/entrypoint.sh /bin/entrypoint.sh
 RUN chmod +x /bin/bird2.sh /bin/entrypoint.sh
 
 EXPOSE 179
+
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD birdc show protocols > /dev/null 2>&1 || exit 1
 
 CMD ["/bin/entrypoint.sh"]
