@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_VERSION="3.1.0"
+SCRIPT_VERSION="3.2.0"
 LOCKFILE="/tmp/bird2-sync.lock"
 
 # === Paths ===
@@ -636,5 +636,71 @@ main() {
 
     log "=== BIRD2 List Sync Completed ==="
 }
+
+# === BGP Session Monitor (режим monitor) ===
+monitor() {
+    if ! birdc show protocols > /tmp/bird_protocols.txt 2>/dev/null; then
+        warn "ALERT: BIRD2 is not running or birdc unavailable"
+        return 1
+    fi
+
+    local alert=0
+    local state
+
+    # Проверяем состояние BGP-пиров (Established / не поднят)
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[^#] || -z "$line" ]] || continue
+        case "$line" in
+            BGP*) ;;
+            *) continue ;;
+        esac
+        state=$(echo "$line" | awk '{print $4}')
+        if [[ "$state" != "Established" && "$state" != "Running" && "$state" != "Up" ]]; then
+            warn "ALERT: BGP peer not established: $line"
+            alert=1
+        fi
+    done < /tmp/bird_protocols.txt
+
+    # Проверяем количество маршрутов относительно порога
+    local min_routes
+    min_routes=$(cfg_get min_routes 1000)
+    if [[ "$min_routes" -gt 0 ]]; then
+        local route_count
+        route_count=$(birdc show route count 2>/dev/null | awk '/routes/{print $NF; exit}' | tr -d '[:space:]')
+        if [[ -n "$route_count" ]] && (( 10#$route_count < min_routes )); then
+            warn "ALERT: route count ($route_count) below threshold ($min_routes)"
+            alert=1
+        fi
+    fi
+
+    # Периодический лимит для алертов — не спамить чаще чем раз в 15 минут
+    local stamp_file="/tmp/bgp_alert_stamp"
+    if (( alert == 1 )); then
+        local now
+        now=$(date +%s)
+        if [[ -f "$stamp_file" ]]; then
+            local last
+            last=$(cat "$stamp_file")
+            if (( now - last < 900 )); then
+                log "BGP alerts suppressed (last alert <15min ago)"
+                rm -f /tmp/bird_protocols.txt
+                return 0
+            fi
+        fi
+        echo "$now" > "$stamp_file"
+    else
+        rm -f "$stamp_file"
+    fi
+
+    rm -f /tmp/bird_protocols.txt
+    return $alert
+}
+
+if [[ "${1:-}" == "monitor" ]]; then
+    # monitor требует конфиг для min_routes
+    load_config > /dev/null 2>&1 || true
+    monitor
+    exit $?
+fi
 
 main "$@"

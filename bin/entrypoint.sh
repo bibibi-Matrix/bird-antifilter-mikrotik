@@ -51,14 +51,18 @@ fi
 
 # === Setup crontab with log rotation ===
 CRON_LOG="/var/log/bird2-sync.log"
+SYNC_CRON="${SYNC_CRON:-0 3 * * *}"
+MONITOR_CRON="${MONITOR_CRON:-*/10 * * * *}"
 cat > /tmp/bird2cron <<CRON
-0 3 * * * /bin/bird2.sh >> $CRON_LOG 2>&1
+$SYNC_CRON /bin/bird2.sh >> $CRON_LOG 2>&1
 # Rotate log weekly (keep 4 weeks)
 0 0 * * 0 [ -f $CRON_LOG ] && mv $CRON_LOG ${CRON_LOG}.old && touch $CRON_LOG
+# BGP session/route monitor
+$MONITOR_CRON /bin/bird2.sh monitor >> $CRON_LOG 2>&1
 CRON
 crontab /tmp/bird2cron
 rm /tmp/bird2cron
-echo "[entrypoint] Crontab set: daily sync at 03:00, weekly log rotation"
+echo "[entrypoint] Crontab set: sync=[$SYNC_CRON] monitor=[$MONITOR_CRON], weekly log rotation"
 
 # === Run initial list sync ===
 echo "[entrypoint] Running initial list sync..."
