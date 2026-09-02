@@ -9,7 +9,7 @@ RUN apk add --no-cache \
     bash \
     dcron \
     coreutils \
-    ip-route2 \
+    iproute2 \
     && rm -rf /var/cache/apk/*
 
 RUN mkdir -p /etc/bird/list /etc/bird/list_rsc /etc/bird/list_custom /etc/bird/black_list /var/run/bird /var/log \
