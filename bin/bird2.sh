@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_VERSION="3.2.0"
+SCRIPT_VERSION="3.2.1"
 LOCKFILE="/tmp/bird2-sync.lock"
 
 # === Paths ===
@@ -309,6 +309,58 @@ apply_blacklist() {
     fi
 
     # awk: загружаем blacklist CIDR, проверяем containment за один проход
+    cat > /tmp/apply_blacklist.awk <<'AWK'
+function ip2int(ip,    a) {
+    split(ip, a, ".");
+    return a[1]*16777216 + a[2]*65536 + a[3]*256 + a[4];
+}
+function cidr_contains(parent_ip, parent_mask, child_ip, child_mask,    p_int, c_int, p_end, c_end) {
+    p_int = ip2int(parent_ip);
+    c_int = ip2int(child_ip);
+    p_end = p_int + (2^(32 - parent_mask)) - 1;
+    c_end = c_int + (2^(32 - child_mask)) - 1;
+    return (p_int <= c_int && p_end >= c_end);
+}
+BEGIN {
+    nbl = 0;
+    while ((getline line < bl_file) > 0) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line);
+        if (line == "" || /^#/) continue;
+        if (index(line, "/") == 0) line = line "/32";
+        split(line, p, "/");
+        bl_ip[nbl] = p[1];
+        bl_mask[nbl] = p[2] + 0;
+        nbl++;
+    }
+    close(bl_file);
+    total = 0; blocked = 0;
+}
+{
+    total++;
+    gsub(/^route /, "");
+    gsub(/ unreachable;$/, "");
+    split($0, p, "/");
+    child_ip = p[1];
+    child_mask = p[2] + 0;
+
+    is_blocked = 0;
+    for (i = 0; i < nbl; i++) {
+        if (cidr_contains(bl_ip[i], bl_mask[i], child_ip, child_mask)) {
+            is_blocked = 1;
+            break;
+        }
+    }
+    if (is_blocked) {
+        blocked++;
+    } else {
+        print "route " child_ip "/" child_mask " unreachable;";
+    }
+}
+END {
+    print blocked > "/dev/stderr";
+}
+AWK
+
     local removed=0
     for file in "${LIST_RSC_DIR}"/*.rsc; do
         [[ -f "$file" ]] || continue
@@ -317,59 +369,8 @@ apply_blacklist() {
         local before
         before=$(wc -l < "$file")
 
-        local result
-        result=$(awk -v bl_file="$bl_combined" '
-        function ip2int(ip,    a) {
-            split(ip, a, ".");
-            return a[1]*16777216 + a[2]*65536 + a[3]*256 + a[4];
-        }
-        function cidr_contains(parent_ip, parent_mask, child_ip, child_mask,    p_int, c_int, p_end, c_end) {
-            p_int = ip2int(parent_ip);
-            c_int = ip2int(child_ip);
-            p_end = p_int + (2^(32 - parent_mask)) - 1;
-            c_end = c_int + (2^(32 - child_mask)) - 1;
-            return (p_int <= c_int && p_end >= c_end);
-        }
-        BEGIN {
-            # Загружаем blacklist
-            nbl = 0;
-            while ((getline line < bl_file) > 0) {
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line);
-                if (line == "" || /^#/) continue;
-                if (index(line, "/") == 0) line = line "/32";
-                split(line, p, "/");
-                bl_ip[nbl] = p[1];
-                bl_mask[nbl] = p[2] + 0;
-                nbl++;
-            }
-            close(bl_file);
-            total = 0; blocked = 0;
-        }
-        {
-            total++;
-            # Извлекаем CIDR из "route X.X.X.X/N unreachable;"
-            gsub(/^route /, "");
-            gsub(/ unreachable;$/, "");
-            split($0, p, "/");
-            child_ip = p[1];
-            child_mask = p[2] + 0;
-
-            is_blocked = 0;
-            for (i = 0; i < nbl; i++) {
-                if (cidr_contains(bl_ip[i], bl_mask[i], child_ip, child_mask)) {
-                    is_blocked = 1;
-                    break;
-                }
-            }
-            if (is_blocked) {
-                blocked++;
-            } else {
-                print "route " child_ip "/" child_mask " unreachable;";
-            }
-        }
-        END {
-            print blocked > "/dev/stderr";
-        }' "$file" 2>/tmp/blk_removed.txt > "${file}.tmp"
+        awk -v bl_file="$bl_combined" -f /tmp/apply_blacklist.awk \
+            "$file" 2>/tmp/blk_removed.txt > "${file}.tmp" || true
 
         local blk=0
         [[ -s /tmp/blk_removed.txt ]] && blk=$(cat /tmp/blk_removed.txt)
